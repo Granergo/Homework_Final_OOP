@@ -1,4 +1,4 @@
 package financehelper.service;
 
-public class UserService {
+public class AuthService {
 }

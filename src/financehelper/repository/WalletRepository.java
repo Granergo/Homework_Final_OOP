@@ -1,4 +1,4 @@
 package financehelper.repository;
 
-public interface FinanceRepository {
+public interface WalletRepository {
 }
