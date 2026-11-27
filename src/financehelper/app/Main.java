@@ -21,6 +21,7 @@ import financehelper.service.WalletService;
 import financehelper.ui.ConsoleMenu;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Scanner;
 
@@ -101,10 +102,10 @@ public final class Main {
             AuthService authService,
             WalletService walletService
     ) {
-
         int choice = menu.showAuthorizationMenu();
 
         switch (choice) {
+
             case 1 -> handleLogin(
                     menu,
                     authService,
@@ -125,12 +126,13 @@ public final class Main {
         return true;
     }
 
+    // ==================== РЕГИСТРАЦИЯ ====================
+
     private static void handleRegistration(
             ConsoleMenu menu,
             AuthService authService,
             WalletService walletService
     ) {
-
         menu.showInformation("Создание нового аккаунта");
 
         String login = menu.readLogin();
@@ -160,12 +162,13 @@ public final class Main {
         }
     }
 
+    // ==================== АВТОРИЗАЦИЯ ====================
+
     private static void handleLogin(
             ConsoleMenu menu,
             AuthService authService,
             WalletService walletService
     ) {
-
         menu.showInformation("Вход в аккаунт");
 
         String login = menu.readLogin();
@@ -195,7 +198,6 @@ public final class Main {
             WalletService walletService,
             FinanceService financeService
     ) {
-
         User currentUser = authService.getCurrentUser().orElse(null);
 
         if (currentUser == null) {
@@ -268,7 +270,6 @@ public final class Main {
             WalletService walletService,
             FinanceService financeService
     ) {
-
         Wallet wallet = walletService.getOrCreateWallet(
                 currentUser.getId()
         );
@@ -296,20 +297,28 @@ public final class Main {
                     financeService.getAllCategories()
             );
 
-            case 4 -> menu.showFeatureNotImplemented(
-                    "Поиск операций по категории"
+            case 4 -> handleFilterByCategory(
+                    menu,
+                    wallet.getId(),
+                    financeService
             );
 
-            case 5 -> menu.showFeatureNotImplemented(
-                    "Фильтрация операций по периоду"
+            case 5 -> handleFilterByPeriod(
+                    menu,
+                    wallet.getId(),
+                    financeService
             );
 
-            case 6 -> menu.showFeatureNotImplemented(
-                    "Редактирование операций"
+            case 6 -> handleEditOperation(
+                    menu,
+                    wallet.getId(),
+                    financeService
             );
 
-            case 7 -> menu.showFeatureNotImplemented(
-                    "Удаление операций"
+            case 7 -> handleDeleteOperation(
+                    menu,
+                    wallet.getId(),
+                    financeService
             );
         }
     }
@@ -322,11 +331,12 @@ public final class Main {
             OperationType type,
             FinanceService financeService
     ) {
-
         List<Category> categories = financeService.getCategories(type);
 
         if (categories.isEmpty()) {
-            menu.showError("Нет доступных категорий для этой операции.");
+            menu.showError(
+                    "Нет доступных категорий для этой операции."
+            );
             return;
         }
 
@@ -363,11 +373,285 @@ public final class Main {
 
             BigDecimal balance = financeService.getBalance(walletId);
 
-            String categoryName = financeService.getCategoryName(categoryId);
+            String categoryName =
+                    financeService.getCategoryName(categoryId);
 
             menu.showOperationCreated(
                     operation,
                     categoryName,
+                    balance
+            );
+
+        } catch (FinanceException |
+                 IllegalArgumentException |
+                 IllegalStateException e) {
+
+            menu.showError(e.getMessage());
+        }
+    }
+
+    // ==================== ФИЛЬТРАЦИЯ ПО КАТЕГОРИИ ====================
+
+    private static void handleFilterByCategory(
+            ConsoleMenu menu,
+            long walletId,
+            FinanceService financeService
+    ) {
+        List<Category> categories = financeService.getAllCategories();
+
+        if (categories.isEmpty()) {
+            menu.showError("Категории отсутствуют.");
+            return;
+        }
+
+        menu.showAllCategoriesForSelection(categories);
+
+        Long categoryId = menu.readCategoryId(categories);
+
+        if (categoryId == null) {
+            return;
+        }
+
+        try {
+            List<FinancialOperation> operations =
+                    financeService.getOperationsByCategory(
+                            walletId,
+                            categoryId
+                    );
+
+            menu.showOperationHistory(
+                    operations,
+                    categories
+            );
+
+        } catch (FinanceException |
+                 IllegalArgumentException |
+                 IllegalStateException e) {
+
+            menu.showError(e.getMessage());
+        }
+    }
+
+    // ==================== ФИЛЬТРАЦИЯ ПО ПЕРИОДУ ====================
+
+    private static void handleFilterByPeriod(
+            ConsoleMenu menu,
+            long walletId,
+            FinanceService financeService
+    ) {
+        menu.showInformation(
+                "Введите даты периода в формате ДД.ММ.ГГГГ. " +
+                        "Для отмены введите 0."
+        );
+
+        LocalDate from = menu.readDate("Начальная дата: ");
+
+        if (from == null) {
+            return;
+        }
+
+        LocalDate to = menu.readDate("Конечная дата: ");
+
+        if (to == null) {
+            return;
+        }
+
+        try {
+            List<FinancialOperation> operations =
+                    financeService.getOperationsBetween(
+                            walletId,
+                            from,
+                            to
+                    );
+
+            menu.showFilterPeriod(from, to);
+
+            menu.showOperationHistory(
+                    operations,
+                    financeService.getAllCategories()
+            );
+
+        } catch (FinanceException |
+                 IllegalArgumentException |
+                 IllegalStateException e) {
+
+            menu.showError(e.getMessage());
+        }
+    }
+
+    // ==================== РЕДАКТИРОВАНИЕ ОПЕРАЦИИ ====================
+
+    private static void handleEditOperation(
+            ConsoleMenu menu,
+            long walletId,
+            FinanceService financeService
+    ) {
+        List<FinancialOperation> operations =
+                financeService.getOperations(walletId);
+
+        if (operations.isEmpty()) {
+            menu.showInformation(
+                    "Нет операций для редактирования."
+            );
+            return;
+        }
+
+        menu.showOperationHistory(
+                operations,
+                financeService.getAllCategories()
+        );
+
+        Long operationId = menu.readPositiveLong(
+                "Введите номер операции для редактирования (0 - отмена): "
+        );
+
+        if (operationId == null) {
+            return;
+        }
+
+        try {
+            FinancialOperation oldOperation =
+                    financeService.getOperation(
+                            walletId,
+                            operationId
+                    );
+
+            menu.showOperationDetails(
+                    oldOperation,
+                    financeService.getCategoryName(
+                            oldOperation.getCategoryId()
+                    )
+            );
+
+            int editChoice = menu.showEditOperationMenu();
+
+            if (editChoice == 0) {
+                return;
+            }
+
+            BigDecimal newAmount = oldOperation.getAmount();
+            long newCategoryId = oldOperation.getCategoryId();
+
+            // Изменение суммы.
+            if (editChoice == 1 || editChoice == 3) {
+                BigDecimal amount = menu.readAmount();
+
+                if (amount == null) {
+                    return;
+                }
+
+                newAmount = amount;
+            }
+
+            // Изменение категории.
+            if (editChoice == 2 || editChoice == 3) {
+
+                List<Category> categories =
+                        financeService.getCategories(
+                                oldOperation.getType()
+                        );
+
+                menu.showCategoriesForSelection(
+                        categories,
+                        oldOperation.getType()
+                );
+
+                Long categoryId = menu.readCategoryId(categories);
+
+                if (categoryId == null) {
+                    return;
+                }
+
+                newCategoryId = categoryId;
+            }
+
+            FinancialOperation updatedOperation =
+                    financeService.updateOperation(
+                            walletId,
+                            operationId,
+                            newAmount,
+                            newCategoryId
+                    );
+
+            BigDecimal balance = financeService.getBalance(walletId);
+
+            menu.showOperationUpdated(
+                    updatedOperation,
+                    financeService.getCategoryName(newCategoryId),
+                    balance
+            );
+
+        } catch (FinanceException |
+                 IllegalArgumentException |
+                 IllegalStateException e) {
+
+            menu.showError(e.getMessage());
+        }
+    }
+
+    // ==================== УДАЛЕНИЕ ОПЕРАЦИИ ====================
+
+    private static void handleDeleteOperation(
+            ConsoleMenu menu,
+            long walletId,
+            FinanceService financeService
+    ) {
+        List<FinancialOperation> operations =
+                financeService.getOperations(walletId);
+
+        if (operations.isEmpty()) {
+            menu.showInformation(
+                    "Нет операций для удаления."
+            );
+            return;
+        }
+
+        menu.showOperationHistory(
+                operations,
+                financeService.getAllCategories()
+        );
+
+        Long operationId = menu.readPositiveLong(
+                "Введите номер операции для удаления (0 - отмена): "
+        );
+
+        if (operationId == null) {
+            return;
+        }
+
+        try {
+            FinancialOperation operation =
+                    financeService.getOperation(
+                            walletId,
+                            operationId
+                    );
+
+            menu.showOperationDetails(
+                    operation,
+                    financeService.getCategoryName(
+                            operation.getCategoryId()
+                    )
+            );
+
+            boolean confirmed = menu.readConfirmation(
+                    "Вы действительно хотите удалить эту операцию? (да/нет): "
+            );
+
+            if (!confirmed) {
+                menu.showInformation("Удаление отменено.");
+                return;
+            }
+
+            FinancialOperation deletedOperation =
+                    financeService.deleteOperation(
+                            walletId,
+                            operationId
+                    );
+
+            BigDecimal balance = financeService.getBalance(walletId);
+
+            menu.showOperationDeleted(
+                    deletedOperation,
                     balance
             );
 

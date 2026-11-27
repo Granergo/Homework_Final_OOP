@@ -1,3 +1,4 @@
+
 package financehelper.service;
 
 import financehelper.exception.FinanceException;
@@ -10,6 +11,7 @@ import financehelper.repository.FinancialOperationRepository;
 import financehelper.repository.WalletRepository;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -56,7 +58,7 @@ public class FinanceService {
         nextOperationId = maxId + 1;
     }
 
-    // ==================== ДОХОДЫ ====================
+    // ==================== СОЗДАНИЕ ДОХОДА ====================
 
     public synchronized FinancialOperation addIncome(
             long walletId,
@@ -71,7 +73,7 @@ public class FinanceService {
         );
     }
 
-    // ==================== РАСХОДЫ ====================
+    // ==================== СОЗДАНИЕ РАСХОДА ====================
 
     public synchronized FinancialOperation addExpense(
             long walletId,
@@ -86,8 +88,6 @@ public class FinanceService {
         );
     }
 
-    // ==================== СОЗДАНИЕ ОПЕРАЦИИ ====================
-
     private FinancialOperation addOperation(
             long walletId,
             BigDecimal amount,
@@ -96,21 +96,10 @@ public class FinanceService {
     ) {
         validateAmount(amount);
 
-        Wallet wallet = walletRepository.findById(walletId)
-                .orElseThrow(() -> new FinanceException(
-                        "Кошелёк не найден."
-                ));
+        Wallet wallet = findWallet(walletId);
+        Category category = findCategory(categoryId);
 
-        Category category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new FinanceException(
-                        "Указанная категория не найдена."
-                ));
-
-        if (category.getType() != type) {
-            throw new FinanceException(
-                    "Тип операции не соответствует выбранной категории."
-            );
-        }
+        validateCategoryType(category, type);
 
         if (nextOperationId <= 0
                 || nextOperationId == Long.MAX_VALUE) {
@@ -134,22 +123,81 @@ public class FinanceService {
         return operation;
     }
 
+    // ==================== РЕДАКТИРОВАНИЕ ОПЕРАЦИИ ====================
+
+    public synchronized FinancialOperation updateOperation(
+            long walletId,
+            long operationId,
+            BigDecimal newAmount,
+            long newCategoryId
+    ) {
+        validateAmount(newAmount);
+
+        FinancialOperation oldOperation =
+                findWalletOperation(walletId, operationId);
+
+        Category newCategory = findCategory(newCategoryId);
+
+        // Тип операции после редактирования не меняется.
+        validateCategoryType(
+                newCategory,
+                oldOperation.getType()
+        );
+
+        FinancialOperation updatedOperation =
+                new FinancialOperation(
+                        oldOperation.getId(),
+                        oldOperation.getWalletId(),
+                        oldOperation.getCreatedAt(),
+                        newAmount,
+                        oldOperation.getType(),
+                        newCategory.getId()
+                );
+
+        operationRepository.update(updatedOperation);
+
+        return updatedOperation;
+    }
+
+    // ==================== УДАЛЕНИЕ ОПЕРАЦИИ ====================
+
+    public synchronized FinancialOperation deleteOperation(
+            long walletId,
+            long operationId
+    ) {
+        FinancialOperation operation =
+                findWalletOperation(walletId, operationId);
+
+        boolean deleted = operationRepository.deleteById(operationId);
+
+        if (!deleted) {
+            throw new IllegalStateException(
+                    "Не удалось удалить финансовую операцию."
+            );
+        }
+
+        return operation;
+    }
+
+    // ==================== ПОЛУЧЕНИЕ ОПЕРАЦИИ ====================
+
+    public FinancialOperation getOperation(
+            long walletId,
+            long operationId
+    ) {
+        return findWalletOperation(walletId, operationId);
+    }
+
     // ==================== БАЛАНС ====================
 
     public BigDecimal getBalance(long walletId) {
-        BigDecimal income = getTotalIncome(walletId);
-        BigDecimal expenses = getTotalExpenses(walletId);
-
-        return income.subtract(expenses);
+        return getTotalIncome(walletId)
+                .subtract(getTotalExpenses(walletId));
     }
-
-    // ==================== ОБЩИЕ ДОХОДЫ ====================
 
     public BigDecimal getTotalIncome(long walletId) {
         return getTotalByType(walletId, OperationType.INCOME);
     }
-
-    // ==================== ОБЩИЕ РАСХОДЫ ====================
 
     public BigDecimal getTotalExpenses(long walletId) {
         return getTotalByType(walletId, OperationType.EXPENSE);
@@ -168,19 +216,72 @@ public class FinanceService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    // ==================== ИСТОРИЯ ОПЕРАЦИЙ ====================
+    // ==================== ПОЛНАЯ ИСТОРИЯ ====================
 
     public List<FinancialOperation> getOperations(long walletId) {
         validateWallet(walletId);
 
-        return operationRepository.findByWalletId(walletId)
-                .stream()
-                .sorted(
-                        Comparator.comparing(
-                                FinancialOperation::getCreatedAt
-                        ).reversed()
-                )
-                .toList();
+        return sortOperations(
+                operationRepository.findByWalletId(walletId)
+        );
+    }
+
+    // ==================== ПОИСК ПО КАТЕГОРИИ ====================
+
+    public List<FinancialOperation> getOperationsByCategory(
+            long walletId,
+            long categoryId
+    ) {
+        validateWallet(walletId);
+        findCategory(categoryId);
+
+        List<FinancialOperation> operations =
+                operationRepository.findByWalletId(walletId);
+
+        return sortOperations(
+                operations.stream()
+                        .filter(operation ->
+                                operation.getCategoryId() == categoryId
+                        )
+                        .toList()
+        );
+    }
+
+    // ==================== ФИЛЬТРАЦИЯ ПО ПЕРИОДУ ====================
+
+    public List<FinancialOperation> getOperationsBetween(
+            long walletId,
+            LocalDate from,
+            LocalDate to
+    ) {
+        validateWallet(walletId);
+
+        if (from == null || to == null) {
+            throw new FinanceException(
+                    "Необходимо указать начальную и конечную даты."
+            );
+        }
+
+        if (from.isAfter(to)) {
+            throw new FinanceException(
+                    "Начальная дата не может быть позже конечной."
+            );
+        }
+
+        List<FinancialOperation> operations =
+                operationRepository.findByWalletId(walletId);
+
+        return sortOperations(
+                operations.stream()
+                        .filter(operation -> {
+                            LocalDate operationDate =
+                                    operation.getCreatedAt().toLocalDate();
+
+                            return !operationDate.isBefore(from)
+                                    && !operationDate.isAfter(to);
+                        })
+                        .toList()
+        );
     }
 
     // ==================== КАТЕГОРИИ ====================
@@ -194,29 +295,94 @@ public class FinanceService {
     }
 
     public String getCategoryName(long categoryId) {
-        return categoryRepository.findById(categoryId)
-                .map(Category::getName)
-                .orElse("Категория #" + categoryId);
+        return findCategory(categoryId).getName();
     }
 
-    // ==================== ПРОВЕРКИ ====================
+    // ==================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ====================
+
+    private List<FinancialOperation> sortOperations(
+            List<FinancialOperation> operations
+    ) {
+        return operations.stream()
+                .sorted(
+                        Comparator.comparing(
+                                FinancialOperation::getCreatedAt
+                        ).reversed()
+                )
+                .toList();
+    }
 
     private void validateWallet(long walletId) {
+        findWallet(walletId);
+    }
+
+    private Wallet findWallet(long walletId) {
         if (walletId <= 0) {
             throw new FinanceException(
                     "Некорректный идентификатор кошелька."
             );
         }
 
-        if (!walletRepository.findById(walletId).isPresent()) {
+        return walletRepository.findById(walletId)
+                .orElseThrow(() -> new FinanceException(
+                        "Кошелёк не найден."
+                ));
+    }
+
+    private Category findCategory(long categoryId) {
+        if (categoryId <= 0) {
             throw new FinanceException(
-                    "Кошелёк не найден."
+                    "Некорректный идентификатор категории."
+            );
+        }
+
+        return categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new FinanceException(
+                        "Указанная категория не найдена."
+                ));
+    }
+
+    private FinancialOperation findWalletOperation(
+            long walletId,
+            long operationId
+    ) {
+        findWallet(walletId);
+
+        if (operationId <= 0) {
+            throw new FinanceException(
+                    "Некорректный идентификатор операции."
+            );
+        }
+
+        FinancialOperation operation =
+                operationRepository.findById(operationId)
+                        .orElseThrow(() -> new FinanceException(
+                                "Операция не найдена."
+                        ));
+
+        if (operation.getWalletId() != walletId) {
+            throw new FinanceException(
+                    "Операция не принадлежит текущему кошельку."
+            );
+        }
+
+        return operation;
+    }
+
+    private void validateCategoryType(
+            Category category,
+            OperationType expectedType
+    ) {
+        if (category.getType() != expectedType) {
+            throw new FinanceException(
+                    "Тип операции не соответствует выбранной категории."
             );
         }
     }
 
     private void validateAmount(BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+        if (amount == null
+                || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new FinanceException(
                     "Сумма должна быть больше нуля."
             );

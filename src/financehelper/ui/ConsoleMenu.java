@@ -8,7 +8,11 @@ import financehelper.model.User;
 import financehelper.model.Wallet;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.List;
 import java.util.Scanner;
 
@@ -18,6 +22,10 @@ public class ConsoleMenu {
 
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
+
+    private static final DateTimeFormatter INPUT_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("dd.MM.uuuu")
+                    .withResolverStyle(ResolverStyle.STRICT);
 
     public ConsoleMenu(Scanner scanner) {
         if (scanner == null) {
@@ -181,7 +189,7 @@ public class ConsoleMenu {
         return scanner.nextLine().toCharArray();
     }
 
-    // ==================== ВВОД ДАННЫХ ОПЕРАЦИИ ====================
+    // ==================== ВЫБОР КАТЕГОРИИ ====================
 
     public void showCategoriesForSelection(
             List<Category> categories,
@@ -210,13 +218,42 @@ public class ConsoleMenu {
         System.out.println();
     }
 
+    public void showAllCategoriesForSelection(
+            List<Category> categories
+    ) {
+        printHeader("ВЫБОР КАТЕГОРИИ");
+
+        if (categories == null || categories.isEmpty()) {
+            System.out.println("Категории отсутствуют.");
+            System.out.println();
+            return;
+        }
+
+        for (Category category : categories) {
+            String type = category.getType() == OperationType.INCOME
+                    ? "Доход"
+                    : "Расход";
+
+            System.out.printf(
+                    "%d. %s (%s)%n",
+                    category.getId(),
+                    category.getName(),
+                    type
+            );
+        }
+
+        System.out.println();
+    }
+
     public Long readCategoryId(List<Category> categories) {
         if (categories == null || categories.isEmpty()) {
             return null;
         }
 
         while (true) {
-            System.out.print("Введите номер категории: ");
+            System.out.print(
+                    "Введите номер категории (0 - отмена): "
+            );
 
             if (!scanner.hasNextLine()) {
                 return null;
@@ -226,6 +263,10 @@ public class ConsoleMenu {
 
             try {
                 long categoryId = Long.parseLong(input);
+
+                if (categoryId == 0) {
+                    return null;
+                }
 
                 boolean exists = categories.stream()
                         .anyMatch(category ->
@@ -248,9 +289,13 @@ public class ConsoleMenu {
         }
     }
 
+    // ==================== ВВОД ДЕНЕЖНОЙ СУММЫ ====================
+
     public BigDecimal readAmount() {
         while (true) {
-            System.out.print("Введите сумму: ");
+            System.out.print(
+                    "Введите сумму (0 - отмена): "
+            );
 
             if (!scanner.hasNextLine()) {
                 return null;
@@ -259,6 +304,10 @@ public class ConsoleMenu {
             String input = scanner.nextLine()
                     .trim()
                     .replace(',', '.');
+
+            if (input.equals("0")) {
+                return null;
+            }
 
             try {
                 BigDecimal amount = new BigDecimal(input);
@@ -287,7 +336,113 @@ public class ConsoleMenu {
         }
     }
 
-    // ==================== РЕЗУЛЬТАТЫ РАБОТЫ С ОПЕРАЦИЯМИ ====================
+    // ==================== ВВОД ИДЕНТИФИКАТОРА ====================
+
+    public Long readPositiveLong(String message) {
+        while (true) {
+            System.out.print(message);
+
+            if (!scanner.hasNextLine()) {
+                return null;
+            }
+
+            String input = scanner.nextLine().trim();
+
+            try {
+                long value = Long.parseLong(input);
+
+                if (value == 0) {
+                    return null;
+                }
+
+                if (value > 0) {
+                    return value;
+                }
+
+                System.out.println(
+                        "Ошибка: идентификатор должен быть положительным."
+                );
+
+            } catch (NumberFormatException e) {
+                System.out.println(
+                        "Ошибка: введите целое положительное число."
+                );
+            }
+        }
+    }
+
+    // ==================== ВВОД ДАТЫ ====================
+
+    public LocalDate readDate(String message) {
+        while (true) {
+            System.out.print(message);
+
+            if (!scanner.hasNextLine()) {
+                return null;
+            }
+
+            String input = scanner.nextLine().trim();
+
+            if (input.equals("0")) {
+                return null;
+            }
+
+            try {
+                return LocalDate.parse(input, INPUT_DATE_FORMAT);
+
+            } catch (DateTimeParseException e) {
+                System.out.println(
+                        "Ошибка: введите дату в формате ДД.ММ.ГГГГ."
+                );
+            }
+        }
+    }
+
+    // ==================== ПОДТВЕРЖДЕНИЕ ДЕЙСТВИЯ ====================
+
+    public boolean readConfirmation(String message) {
+        while (true) {
+            System.out.print(message);
+
+            if (!scanner.hasNextLine()) {
+                return false;
+            }
+
+            String input = scanner.nextLine()
+                    .trim()
+                    .toLowerCase();
+
+            if (input.equals("д") || input.equals("да")
+                    || input.equals("y") || input.equals("yes")) {
+                return true;
+            }
+
+            if (input.equals("н") || input.equals("нет")
+                    || input.equals("n") || input.equals("no")) {
+                return false;
+            }
+
+            System.out.println(
+                    "Введите «да» или «нет»."
+            );
+        }
+    }
+
+    // ==================== МЕНЮ РЕДАКТИРОВАНИЯ ====================
+
+    public int showEditOperationMenu() {
+        printHeader("РЕДАКТИРОВАНИЕ ОПЕРАЦИИ");
+
+        System.out.println("1. Изменить сумму");
+        System.out.println("2. Изменить категорию");
+        System.out.println("3. Изменить сумму и категорию");
+        System.out.println("0. Отмена");
+        System.out.println();
+
+        return readChoice("Выберите действие: ", 0, 3);
+    }
+
+    // ==================== ОТОБРАЖЕНИЕ ОПЕРАЦИЙ ====================
 
     public void showOperationCreated(
             FinancialOperation operation,
@@ -355,6 +510,92 @@ public class ConsoleMenu {
         }
 
         System.out.println("----------------------------------------");
+        System.out.println();
+    }
+
+    public void showOperationDetails(
+            FinancialOperation operation,
+            String categoryName
+    ) {
+        printHeader("ИНФОРМАЦИЯ ОБ ОПЕРАЦИИ");
+
+        String type = operation.getType() == OperationType.INCOME
+                ? "Доход"
+                : "Расход";
+
+        System.out.println("Номер операции: " + operation.getId());
+        System.out.println("Тип: " + type);
+        System.out.println("Категория: " + categoryName);
+        System.out.println(
+                "Сумма: " + formatAmount(operation.getAmount())
+        );
+        System.out.println(
+                "Дата создания: " + operation.getCreatedAt().format(DATE_FORMAT)
+        );
+        System.out.println();
+    }
+
+    // ==================== РЕЗУЛЬТАТ РЕДАКТИРОВАНИЯ ====================
+
+    public void showOperationUpdated(
+            FinancialOperation operation,
+            String categoryName,
+            BigDecimal balance
+    ) {
+        printHeader("ОПЕРАЦИЯ ОБНОВЛЕНА");
+
+        String type = operation.getType() == OperationType.INCOME
+                ? "Доход"
+                : "Расход";
+
+        System.out.println("Номер операции: " + operation.getId());
+        System.out.println("Тип: " + type);
+        System.out.println("Категория: " + categoryName);
+        System.out.println(
+                "Новая сумма: " + formatAmount(operation.getAmount())
+        );
+        System.out.println(
+                "Текущий баланс: " + formatAmount(balance)
+        );
+        System.out.println();
+    }
+
+    // ==================== РЕЗУЛЬТАТ УДАЛЕНИЯ ====================
+
+    public void showOperationDeleted(
+            FinancialOperation operation,
+            BigDecimal balance
+    ) {
+        printHeader("ОПЕРАЦИЯ УДАЛЕНА");
+
+        System.out.println(
+                "Операция №" + operation.getId() + " успешно удалена."
+        );
+        System.out.println(
+                "Сумма операции: " + formatAmount(operation.getAmount())
+        );
+        System.out.println(
+                "Текущий баланс: " + formatAmount(balance)
+        );
+        System.out.println();
+    }
+
+    // ==================== ИНФОРМАЦИЯ О ПЕРИОДЕ ====================
+
+    public void showFilterPeriod(LocalDate from, LocalDate to) {
+        printHeader("ОПЕРАЦИИ ЗА ПЕРИОД");
+
+        DateTimeFormatter formatter =
+                DateTimeFormatter.ofPattern("dd.MM.yyyy");
+
+        System.out.println(
+                "Начало периода: " + from.format(formatter)
+        );
+
+        System.out.println(
+                "Конец периода: " + to.format(formatter)
+        );
+
         System.out.println();
     }
 
@@ -463,7 +704,7 @@ public class ConsoleMenu {
 
     private String formatAmount(BigDecimal amount) {
         return amount
-                .setScale(2, java.math.RoundingMode.HALF_UP)
+                .setScale(2, RoundingMode.HALF_UP)
                 .toPlainString() + " ₽";
     }
 

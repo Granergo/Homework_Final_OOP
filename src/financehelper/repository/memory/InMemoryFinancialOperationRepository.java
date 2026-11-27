@@ -1,3 +1,4 @@
+
 package financehelper.repository.memory;
 
 import financehelper.model.FinancialOperation;
@@ -29,6 +30,42 @@ public class InMemoryFinancialOperationRepository
         }
 
         operations.put(operation.getId(), operation);
+    }
+
+    @Override
+    public void update(FinancialOperation operation) {
+        if (operation == null) {
+            throw new IllegalArgumentException(
+                    "Финансовая операция не может быть пустой."
+            );
+        }
+
+        FinancialOperation existing = operations.get(operation.getId());
+
+        if (existing == null) {
+            throw new IllegalStateException(
+                    "Операция для обновления не найдена."
+            );
+        }
+
+        if (existing.getWalletId() != operation.getWalletId()) {
+            throw new IllegalStateException(
+                    "Нельзя перенести операцию в другой кошелёк."
+            );
+        }
+
+        operations.put(operation.getId(), operation);
+    }
+
+    @Override
+    public boolean deleteById(long id) {
+        if (id <= 0) {
+            throw new IllegalArgumentException(
+                    "Идентификатор операции должен быть положительным."
+            );
+        }
+
+        return operations.remove(id) != null;
     }
 
     @Override
